@@ -4,6 +4,7 @@ import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from prompts import system_prompt
 
 
 def generate_content(client, messages):
@@ -12,10 +13,14 @@ def generate_content(client, messages):
             return client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=messages,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0,
+                ),
             )
         except Exception as e:
-            if "503" in str(e) and attempt < 4:
-                time.sleep(10)
+            if ("503" in str(e) or "429" in str(e)) and attempt < 4:
+                time.sleep(35)
                 continue
             raise
 
