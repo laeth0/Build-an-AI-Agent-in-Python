@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 import time
 from dotenv import load_dotenv
@@ -6,6 +7,9 @@ from google import genai
 from google.genai import types
 from prompts import system_prompt
 from call_function import available_functions, call_function
+
+
+MAX_AGENT_ITERATIONS = 20
 
 
 def generate_content(client, messages):
@@ -49,19 +53,29 @@ def main():
         )
     ]
 
-    response = generate_content(client, messages)
+    for _ in range(MAX_AGENT_ITERATIONS):
+        response = generate_content(client, messages)
 
-    if response.usage_metadata is None:
-        raise RuntimeError("No usage metadata found in Gemini response.")
+        if response.usage_metadata is None:
+            raise RuntimeError("No usage metadata found in Gemini response.")
 
-    if args.verbose:
-        print(f"User prompt: {args.user_prompt}")
-        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        if args.verbose:
+            print(f"User prompt: {args.user_prompt}")
+            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
 
-    function_response_parts = []
+        if response.candidates:
+            for candidate in response.candidates:
+                if candidate.content is not None:
+                    messages.append(candidate.content)
 
-    if response.function_calls:
+        if not response.function_calls:
+            print("Final response:")
+            print(response.text)
+            return
+
+        function_response_parts = []
+
         for function_call in response.function_calls:
             function_call_result = call_function(function_call, args.verbose)
 
@@ -80,8 +94,16 @@ def main():
 
             if args.verbose:
                 print(f"-> {function_response.response}")
-    else:
-        print(response.text)
+
+        messages.append(
+            types.Content(
+                role="user",
+                parts=function_response_parts,
+            )
+        )
+
+    print(f"Error: Agent reached maximum iterations ({MAX_AGENT_ITERATIONS}) without a final response.")
+    sys.exit(1)
 
 
 if __name__ == "__main__":
